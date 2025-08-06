@@ -1,8 +1,5 @@
-import cv2
-import mediapipe as mp
 import numpy as np
 
-# --- ANGLE FUNCTIONS ---
 def calculate_angle(a, b, c):
     a, b, c = np.array(a), np.array(b), np.array(c)
     ba = a - b
@@ -15,81 +12,98 @@ def vertical_angle(a, b):
     a, b = np.array(a), np.array(b)
     vector = a - b
     vertical = np.array([0, -1])
-    cosine = np.dot(vector, vertical) / (np.linalg.norm(vector) * np.linalg.norm(vertical))
-    angle = np.arccos(np.clip(cosine, -1.0, 1.0))
+    cosine_angle = np.dot(vector, vertical) / (np.linalg.norm(vector) * np.linalg.norm(vertical))
+    angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
-# --- INIT ---
-mp_drawing = mp.solutions.drawing_utils
+
+import cv2
+import mediapipe as mp
+
 mp_pose = mp.solutions.pose
+pose = mp_pose.Pose()
+mp_draw = mp.solutions.drawing_utils
+
 cap = cv2.VideoCapture(0)
 
-rep_count = 0
-lift_state = "up"
+stage = None
+counter = 0
 
-with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image.flags.writeable = False
-        results = pose.process(image)
-        image.flags.writeable = True
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = pose.process(frame_rgb)
 
-        try:
-            landmarks = results.pose_landmarks.landmark
+    if results.pose_landmarks:
+        landmarks = results.pose_landmarks.landmark
 
-            shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                        landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                   landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                    landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-            ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+        def get_coords(name):
+            lm = landmarks[mp_pose.PoseLandmark[name].value]
+            return [lm.x * frame.shape[1], lm.y * frame.shape[0]]
 
-            knee_angle = calculate_angle(hip, knee, ankle)
-            hip_angle = calculate_angle(shoulder, hip, knee)
-            spine_angle = vertical_angle(shoulder, hip)
+        # Get landmarks
+        l_shoulder = get_coords("LEFT_SHOULDER")
+        l_elbow = get_coords("LEFT_ELBOW")
+        l_wrist = get_coords("LEFT_WRIST")
 
-            # Feedback logic
-            if knee_angle > 160 and hip_angle > 160:
-                lift_feedback = "Standing tall"
-            elif 90 < knee_angle < 140 and 40 < hip_angle < 80:
-                lift_feedback = "Proper deadlift position"
-            else:
-                lift_feedback = "Fix your form"
+        r_shoulder = get_coords("RIGHT_SHOULDER")
+        r_elbow = get_coords("RIGHT_ELBOW")
+        r_wrist = get_coords("RIGHT_WRIST")
 
-            if lift_feedback == "Proper deadlift position" and lift_state == "up":
-                lift_state = "down"
+        l_hip = get_coords("LEFT_HIP")
+        r_hip = get_coords("RIGHT_HIP")
 
-            if lift_feedback == "Standing tall" and lift_state == "down":
-                rep_count += 1
-                lift_state = "up"
+        # Calculate angles
+        left_elbow_angle = calculate_angle(l_shoulder, l_elbow, l_wrist)
+        right_elbow_angle = calculate_angle(r_shoulder, r_elbow, r_wrist)
 
-            # Display on screen
-            cv2.putText(image, f'Reps: {rep_count}', (30, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
-            cv2.putText(image, f'Knee Angle: {int(knee_angle)}', (30, 80),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-            cv2.putText(image, f'Hip Hinge Angle: {int(hip_angle)}', (30, 120),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 180), 2)
-            cv2.putText(image, f'Spine Lean: {int(spine_angle)}', (30, 160),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
-            cv2.putText(image, lift_feedback, (30, 200),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+        avg_elbow_angle = (left_elbow_angle + right_elbow_angle) / 2
 
-        except:
-            pass
+        # Spine angle (avg of shoulders to avg of hips)
+        mid_shoulder = [(l_shoulder[0] + r_shoulder[0]) / 2, (l_shoulder[1] + r_shoulder[1]) / 2]
+        mid_hip = [(l_hip[0] + r_hip[0]) / 2, (l_hip[1] + r_hip[1]) / 2]
 
-        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-        cv2.imshow('Deadlift Form Checker', image)
+        spine_angle = vertical_angle(mid_shoulder, mid_hip)
 
-        if cv2.waitKey(10) & 0xFF == ord('q'):
-            break
+        # Feedback
+        feedback = ""
+        posture_feedback = ""
+
+        if avg_elbow_angle > 160 and spine_angle < 20:
+            feedback = "Arms fully extended"
+            posture_feedback = "Good posture"
+            if stage == "down":
+                counter += 1
+                stage = "up"
+        elif avg_elbow_angle < 70:
+            feedback = "Bar at shoulder"
+            stage = "down"
+        else:
+            feedback = "In motion"
+
+        if 5 <= spine_angle <= 15:
+            spine_feedback = "Perfect posture"
+        elif 15 < spine_angle <= 25:
+            spine_feedback = "Slight lean, adjust if heavy"
+        else:
+            spine_feedback = "Excessive backward lean"
+
+
+        # Draw landmarks and display
+        mp_draw.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+
+        cv2.putText(frame, f'Reps: {counter}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        cv2.putText(frame, f'Elbow: {int(avg_elbow_angle)}', (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+        cv2.putText(frame, f'Spine Angle: {int(spine_angle)}', (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
+        cv2.putText(frame, feedback, (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+        cv2.putText(frame, posture_feedback, (10, 190), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,255), 2)
+
+    cv2.imshow("Overhead Press Tracker", frame)
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
 
 cap.release()
 cv2.destroyAllWindows()
