@@ -12,118 +12,130 @@ def calculate_angle(a, b, c):
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
-def horizontal_angle(a, b):
+def vertical_angle(a, b):
     a, b = np.array(a), np.array(b)
     vector = a - b
-    horizontal = np.array([1, 0])
-    cosine = np.dot(vector, horizontal) / (np.linalg.norm(vector) * np.linalg.norm(horizontal))
+    vertical = np.array([0, -1])
+    cosine = np.dot(vector, vertical) / (np.linalg.norm(vector) * np.linalg.norm(vertical))
     angle = np.arccos(np.clip(cosine, -1.0, 1.0))
     return np.degrees(angle)
+
+def horizontal_alignment(a, b):
+    a, b = np.array(a), np.array(b)
+    return abs(a[1] - b[1]) * 100  # vertical difference in %
 
 # --- INIT ---
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 cap = cv2.VideoCapture(0)
 
+pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
 start_time = 0
-hold_time = 0
+plank_timer = 0
 form_good = False
-bad_form_timer = None
+bad_form_start = None
 
-with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image.flags.writeable = False
-        results = pose.process(image)
-        image.flags.writeable = True
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    image.flags.writeable = False
+    results = pose.process(image)
+    image.flags.writeable = True
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-        try:
-            landmarks = results.pose_landmarks.landmark
+    try:
+        lm = results.pose_landmarks.landmark
 
-            # Get required joint coordinates
-            l_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                          landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            r_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
-                          landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
-            l_elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
-                       landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-            r_elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x,
-                       landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
-            l_wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
-                       landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
-            r_wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,
-                       landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
-            l_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            r_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
-                     landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-            l_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                      landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-            r_knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
-                      landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-            l_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                       landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
-            r_ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
-                       landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+        def get_point(name):
+            pt = lm[mp_pose.PoseLandmark[name].value]
+            return [pt.x, pt.y]
 
-            # Calculate angles
-            spine_angle = calculate_angle(l_shoulder, l_hip, l_knee)
-            l_elbow_angle = calculate_angle(l_shoulder, l_elbow, l_wrist)
-            r_elbow_angle = calculate_angle(r_shoulder, r_elbow, r_wrist)
-            l_knee_angle = calculate_angle(l_hip, l_knee, l_ankle)
-            r_knee_angle = calculate_angle(r_hip, r_knee, r_ankle)
-            hip_level_angle = horizontal_angle(l_hip, r_hip)
+        # Landmarks
+        l_shoulder, r_shoulder = get_point("LEFT_SHOULDER"), get_point("RIGHT_SHOULDER")
+        l_elbow, r_elbow = get_point("LEFT_ELBOW"), get_point("RIGHT_ELBOW")
+        l_wrist, r_wrist = get_point("LEFT_WRIST"), get_point("RIGHT_WRIST")
+        l_hip, r_hip = get_point("LEFT_HIP"), get_point("RIGHT_HIP")
+        l_knee, r_knee = get_point("LEFT_KNEE"), get_point("RIGHT_KNEE")
+        l_ankle, r_ankle = get_point("LEFT_ANKLE"), get_point("RIGHT_ANKLE")
 
-            # Check form conditions
-            good_spine = 160 <= spine_angle <= 200
-            good_elbows = 70 <= l_elbow_angle <= 110 and 70 <= r_elbow_angle <= 110
-            good_knees = 160 <= l_knee_angle <= 200 and 160 <= r_knee_angle <= 200
-            good_hips = hip_level_angle <= 10
+        # Angles
+        spine_angle = vertical_angle(l_shoulder, l_hip)
+        l_elbow_angle = calculate_angle(l_shoulder, l_elbow, l_wrist)
+        r_elbow_angle = calculate_angle(r_shoulder, r_elbow, r_wrist)
+        l_knee_angle = calculate_angle(l_hip, l_knee, l_ankle)
+        r_knee_angle = calculate_angle(r_hip, r_knee, r_ankle)
+        hip_diff = horizontal_alignment(l_hip, r_hip)
 
-            all_good = good_spine and good_elbows and good_knees and good_hips
+        # Check form
+        is_good_form = (
+            spine_angle < 10 and
+            80 < l_elbow_angle < 110 and
+            80 < r_elbow_angle < 110 and
+            160 < l_knee_angle < 180 and
+            160 < r_knee_angle < 180 and
+            hip_diff < 5
+        )
 
-            if all_good:
-                if not form_good:
-                    form_good = True
-                    bad_form_timer = None
-                    start_time = time.time() - hold_time  # resume timer
-                else:
-                    hold_time = time.time() - start_time
+        current_time = time.time()
+
+        if is_good_form:
+            if not form_good:
+                form_good = True
+                bad_form_start = None
+                if start_time == 0:
+                    start_time = current_time
             else:
-                if form_good:
-                    if bad_form_timer is None:
-                        bad_form_timer = time.time()
-                    elif time.time() - bad_form_timer > 3:
-                        form_good = False
-                        hold_time = time.time() - start_time  # pause timer
+                plank_timer += current_time - start_time
+                start_time = current_time
+        else:
+            if form_good:
+                if bad_form_start is None:
+                    bad_form_start = current_time
+                elif current_time - bad_form_start >= 3:
+                    form_good = False
+                    start_time = 0
+                    bad_form_start = None
+            else:
+                start_time = 0
+                bad_form_start = None
 
-            # Display angles and timer
-            cv2.putText(image, f'Hold Time: {int(hold_time)} sec', (30, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0) if form_good else (0, 0, 255), 2)
+        # DISPLAY
+        cv2.putText(image, f'Timer: {int(plank_timer)}s', (30, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-            cv2.putText(image, f'Spine: {int(spine_angle)}', (30, 80),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-            cv2.putText(image, f'L Elbow: {int(l_elbow_angle)}  R Elbow: {int(r_elbow_angle)}', (30, 120),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 180, 0), 2)
-            cv2.putText(image, f'L Knee: {int(l_knee_angle)}  R Knee: {int(r_knee_angle)}', (30, 160),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 255), 2)
-            cv2.putText(image, f'Hip Level: {int(hip_level_angle)}', (30, 200),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 255), 2)
+        cv2.putText(image, f'Spine: {int(spine_angle)}', (30, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+        cv2.putText(image, f'L Elbow: {int(l_elbow_angle)}', (30, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 180), 2)
+        cv2.putText(image, f'R Elbow: {int(r_elbow_angle)}', (30, 140),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
+        cv2.putText(image, f'L Knee: {int(l_knee_angle)}', (30, 170),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 0), 2)
+        cv2.putText(image, f'R Knee: {int(r_knee_angle)}', (30, 200),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 255, 0), 2)
+        cv2.putText(image, f'Hip Alignment: {hip_diff:.2f}%', (30, 230),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 255, 100), 2)
 
-        except:
-            pass
+        if is_good_form:
+            cv2.putText(image, "Form: Good", (30, 270),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        else:
+            cv2.putText(image, "Form: Bad", (30, 270),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-        cv2.imshow('Plank Form Checker with Timer', image)
+    except Exception as e:
+        cv2.putText(image, "No pose detected", (30, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        if cv2.waitKey(10) & 0xFF == ord('q'):
-            break
+    mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+    cv2.imshow('Plank Form Tracker', image)
+
+    if cv2.waitKey(10) & 0xFF == ord('q'):
+        break
 
 cap.release()
 cv2.destroyAllWindows()
-
