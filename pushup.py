@@ -37,61 +37,88 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         try:
             landmarks = results.pose_landmarks.landmark
 
-            # Landmarks
-            shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                        landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-            wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+            # LEFT SIDE
+            left_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                             landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+            left_elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+            left_wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
 
-            hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                   landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                    landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-            ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+            left_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
+                        landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+            left_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
+                         landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
+            left_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
 
-            # Angles
-            elbow_angle = calculate_angle(shoulder, elbow, wrist)
-            alignment_angle = calculate_angle(shoulder, hip, ankle)
-            knee_angle = calculate_angle(hip, knee, ankle)
+            # RIGHT SIDE
+            right_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
+                              landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+            right_elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x,
+                           landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
+            right_wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,
+                           landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
+
+            right_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
+                         landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+            right_knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
+                          landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
+            right_ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
+                           landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+
+            # ANGLES
+            left_elbow_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
+            right_elbow_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
+
+            left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
+            right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
+
+            spine_angle_left = calculate_angle(left_shoulder, left_hip, left_ankle)
+            spine_angle_right = calculate_angle(right_shoulder, right_hip, right_ankle)
+            avg_spine_angle = (spine_angle_left + spine_angle_right) / 2
+
+            # CHECKS
+            elbows_down = left_elbow_angle < 90 and right_elbow_angle < 90
+            elbows_up = left_elbow_angle > 160 and right_elbow_angle > 160
+
+            knees_straight = left_knee_angle > 170 and right_knee_angle > 170
+            body_straight = avg_spine_angle > 160
 
             # Feedback
-            if alignment_angle > 170:
-                form_feedback = "Good posture"
-            else:
-                form_feedback = "Keep your body straight"
+            form_feedback = "Good posture" if body_straight else "Keep your body straight"
+            knee_feedback = "Knees straight" if knees_straight else "Straighten your knees"
+            elbow_feedback = "Lower down" if not elbows_down else "Good depth"
 
-            if knee_angle < 170:
-                knee_feedback = "Straighten your knees"
-            else:
-                knee_feedback = "Knees straight"
-
-            # Rep counter logic
-            if elbow_angle > 160:
+            # REP COUNTER
+            if elbows_up:
                 pushup_state = "up"
-            if (
-                elbow_angle < 90
-                and pushup_state == "up"
-                and alignment_angle > 160
-                and knee_angle > 170
-            ):
+            if elbows_down and pushup_state == "up" and body_straight and knees_straight:
                 pushup_state = "down"
                 rep_count += 1
 
-            # Display
-            cv2.putText(image, f'Elbow: {int(elbow_angle)}', (30, 50),
+            # DISPLAY INFO
+            cv2.putText(image, f'Left Elbow: {int(left_elbow_angle)}', (30, 50),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-            cv2.putText(image, f'Spine: {int(alignment_angle)}', (30, 90),
+            cv2.putText(image, f'Right Elbow: {int(right_elbow_angle)}', (30, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+
+            cv2.putText(image, f'Spine: {int(avg_spine_angle)}', (30, 130),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-            cv2.putText(image, f'Knee: {int(knee_angle)}', (30, 130),
+
+            cv2.putText(image, f'Left Knee: {int(left_knee_angle)}', (30, 170),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 100), 2)
-            cv2.putText(image, form_feedback, (30, 170),
+            cv2.putText(image, f'Right Knee: {int(right_knee_angle)}', (30, 210),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 100), 2)
+
+            cv2.putText(image, form_feedback, (30, 250),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 128, 255), 2)
-            cv2.putText(image, knee_feedback, (30, 210),
+            cv2.putText(image, knee_feedback, (30, 290),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-            cv2.putText(image, f'Reps: {rep_count}', (30, 260),
+            cv2.putText(image, elbow_feedback, (30, 330),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+
+            cv2.putText(image, f'Reps: {rep_count}', (30, 380),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
 
         except:
