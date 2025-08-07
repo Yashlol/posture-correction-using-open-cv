@@ -44,37 +44,53 @@ with mp_pose.Pose(min_detection_confidence=0.5,
         try:
             landmarks = results.pose_landmarks.landmark
 
-            # LANDMARKS
-            shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                        landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                   landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                    landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-            ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+            # LEFT SIDE
+            l_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+            l_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
+                     landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+            l_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
+                      landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
+            l_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
+                       landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+
+            # RIGHT SIDE
+            r_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
+                          landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+            r_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
+                     landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+            r_knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
+                      landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
+            r_ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
+                       landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
 
             # ANGLES
-            knee_angle = calculate_angle(hip, knee, ankle)
-            spine_angle = vertical_angle(shoulder, hip)
+            l_knee_angle = calculate_angle(l_hip, l_knee, l_ankle)
+            r_knee_angle = calculate_angle(r_hip, r_knee, r_ankle)
+            l_spine_angle = vertical_angle(l_shoulder, l_hip)
+            r_spine_angle = vertical_angle(r_shoulder, r_hip)
+
+            # AVERAGE FOR CONSISTENT FEEDBACK
+            avg_knee_angle = (l_knee_angle + r_knee_angle) / 2
+            avg_spine_angle = (l_spine_angle + r_spine_angle) / 2
 
             # FEEDBACK
-            if knee_angle > 140:
+            if avg_knee_angle > 140:
                 squat_feedback = "Standing tall"
-            elif knee_angle < 60:
+            elif avg_knee_angle < 60:
                 squat_feedback = "Too low"
             else:
                 squat_feedback = "Good squat"
 
-            if spine_angle < 10:
+            if avg_spine_angle < 10:
                 spine_feedback = "Upright posture"
-            elif spine_angle < 30:
-                spine_feedback = "correct posture"
+            elif avg_spine_angle < 30:
+                spine_feedback = "Correct posture"
             else:
                 spine_feedback = "Too much forward lean"
 
             # --- REP LOGIC ---
-            if squat_feedback == "Good squat" and spine_feedback == "correct posture":
+            if squat_feedback == "Good squat" and spine_feedback == "Correct posture":
                 if squat_state == "up":
                     squat_state = "down"  # Going down with good form
 
@@ -86,9 +102,9 @@ with mp_pose.Pose(min_detection_confidence=0.5,
             # --- DISPLAY ---
             cv2.putText(image, f'Reps: {rep_count}', (30, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
-            cv2.putText(image, f'Knee: {int(knee_angle)}', (30, 80),
+            cv2.putText(image, f'Knee Angle: {int(avg_knee_angle)}', (30, 80),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-            cv2.putText(image, f'Spine Lean: {int(spine_angle)}', (30, 120),
+            cv2.putText(image, f'Spine Lean: {int(avg_spine_angle)}', (30, 120),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
             cv2.putText(image, squat_feedback, (30, 160),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
@@ -106,11 +122,3 @@ with mp_pose.Pose(min_detection_confidence=0.5,
 
 cap.release()
 cv2.destroyAllWindows()
-
-
-# | **Angle**       | **Good Range** | **What it Indicates**                            |
-# | --------------- | -------------- | ------------------------------------------------ |
-# | **Knee Angle**  | 60°–140°       | Indicates depth of squat                         |
-# | **Spine Angle** | 0°–10°         | Upright spine posture                            |
-# |                 | 10°–30°        | Acceptable forward lean (depending on body type) |
-# |                 | >30°           | Excessive lean — potential form issue            |
