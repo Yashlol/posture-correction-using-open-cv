@@ -22,7 +22,12 @@ pushup_state = "up"
 cv2.namedWindow('Pushup Tracker', cv2.WND_PROP_FULLSCREEN)
 cv2.setWindowProperty('Pushup Tracker', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+with mp_pose.Pose(static_image_mode=False,
+                  model_complexity=2,
+                  enable_segmentation=False,
+                  min_detection_confidence=0.7,
+                  min_tracking_confidence=0.7) as pose:
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -78,12 +83,13 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             spine_angle_right = calculate_angle(right_shoulder, right_hip, right_ankle)
             avg_spine_angle = (spine_angle_left + spine_angle_right) / 2
 
-            # CHECKS
-            elbows_down = left_elbow_angle < 90 and right_elbow_angle < 90
-            elbows_up = left_elbow_angle > 160 and right_elbow_angle > 160
+           
+            # Relaxed pushup rep criteria:
+            elbows_down = left_elbow_angle < 100 and right_elbow_angle < 100
+            elbows_up = left_elbow_angle > 150 and right_elbow_angle > 150
 
-            knees_straight = left_knee_angle > 170 and right_knee_angle > 170
-            body_straight = avg_spine_angle > 160
+            knees_straight = left_knee_angle > 160 and right_knee_angle > 160
+            body_straight = avg_spine_angle > 150
 
             # Feedback
             form_feedback = "Good posture" if body_straight else "Keep your body straight"
@@ -91,10 +97,12 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             elbow_feedback = "Lower down" if not elbows_down else "Good depth"
 
             # REP COUNTER
-            if elbows_up:
+            if elbows_down and body_straight and knees_straight:
+                if pushup_state == "up":
+                    pushup_state = "down"
+
+            if elbows_up and pushup_state == "down":
                 pushup_state = "up"
-            if elbows_down and pushup_state == "up" and body_straight and knees_straight:
-                pushup_state = "down"
                 rep_count += 1
 
             # DISPLAY INFO
