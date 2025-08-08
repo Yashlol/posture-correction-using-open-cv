@@ -43,70 +43,84 @@ with mp_pose.Pose(static_image_mode=False,
         left_knee_angle = right_knee_angle = 0
         avg_spine_angle = 0
 
-        try:
-            landmarks = results.pose_landmarks.landmark
+        if results.pose_landmarks:
+            try:
+                landmarks = results.pose_landmarks.landmark
 
-            def get_landmark(name):
-                lm = landmarks[mp_pose.PoseLandmark[name].value]
-                return [lm.x, lm.y], lm.visibility
+                def get_landmark(name):
+                    lm = landmarks[mp_pose.PoseLandmark[name].value]
+                    return [lm.x, lm.y], lm.visibility
 
-            left_shoulder, v1 = get_landmark("LEFT_SHOULDER")
-            left_elbow, v2 = get_landmark("LEFT_ELBOW")
-            left_wrist, v3 = get_landmark("LEFT_WRIST")
-            left_hip, v4 = get_landmark("LEFT_HIP")
-            left_knee, v5 = get_landmark("LEFT_KNEE")
-            left_ankle, v6 = get_landmark("LEFT_ANKLE")
+                # Left side
+                left_shoulder, v1 = get_landmark("LEFT_SHOULDER")
+                left_elbow, v2 = get_landmark("LEFT_ELBOW")
+                left_wrist, v3 = get_landmark("LEFT_WRIST")
+                left_hip, v4 = get_landmark("LEFT_HIP")
+                left_knee, v5 = get_landmark("LEFT_KNEE")
+                left_ankle, v6 = get_landmark("LEFT_ANKLE")
 
-            right_shoulder, v7 = get_landmark("RIGHT_SHOULDER")
-            right_elbow, v8 = get_landmark("RIGHT_ELBOW")
-            right_wrist, v9 = get_landmark("RIGHT_WRIST")
-            right_hip, v10 = get_landmark("RIGHT_HIP")
-            right_knee, v11 = get_landmark("RIGHT_KNEE")
-            right_ankle, v12 = get_landmark("RIGHT_ANKLE")
+                # Right side
+                right_shoulder, v7 = get_landmark("RIGHT_SHOULDER")
+                right_elbow, v8 = get_landmark("RIGHT_ELBOW")
+                right_wrist, v9 = get_landmark("RIGHT_WRIST")
+                right_hip, v10 = get_landmark("RIGHT_HIP")
+                right_knee, v11 = get_landmark("RIGHT_KNEE")
+                right_ankle, v12 = get_landmark("RIGHT_ANKLE")
 
-            left_visible = all(v > 0.6 for v in [v1, v2, v3, v4, v5, v6])
-            right_visible = all(v > 0.6 for v in [v7, v8, v9, v10, v11, v12])
+                left_visible = all(v > 0.6 for v in [v1, v2, v3, v4, v5, v6])
+                right_visible = all(v > 0.6 for v in [v7, v8, v9, v10, v11, v12])
 
-            if left_visible and right_visible:
-                left_elbow_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
-                right_elbow_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
-                left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
-                right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
-                spine_angle_left = calculate_angle(left_shoulder, left_hip, left_ankle)
-                spine_angle_right = calculate_angle(right_shoulder, right_hip, right_ankle)
-                avg_spine_angle = (spine_angle_left + spine_angle_right) / 2
-            elif left_visible:
-                left_elbow_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
-                left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
-                avg_spine_angle = calculate_angle(left_shoulder, left_hip, left_ankle)
-                right_elbow_angle = left_elbow_angle
-                right_knee_angle = left_knee_angle
-            elif right_visible:
-                right_elbow_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
-                right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
-                avg_spine_angle = calculate_angle(right_shoulder, right_hip, right_ankle)
-                left_elbow_angle = right_elbow_angle
-                left_knee_angle = right_knee_angle
-            else:
-                raise Exception("No side clearly visible")
+                if left_visible and right_visible:
+                    left_elbow_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
+                    right_elbow_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
+                    left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
+                    right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
+                    spine_angle_left = calculate_angle(left_shoulder, left_hip, left_ankle)
+                    spine_angle_right = calculate_angle(right_shoulder, right_hip, right_ankle)
+                    avg_spine_angle = (spine_angle_left + spine_angle_right) / 2
+                elif left_visible:
+                    left_elbow_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
+                    left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
+                    avg_spine_angle = calculate_angle(left_shoulder, left_hip, left_ankle)
+                    right_elbow_angle = left_elbow_angle
+                    right_knee_angle = left_knee_angle
+                elif right_visible:
+                    right_elbow_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
+                    right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
+                    avg_spine_angle = calculate_angle(right_shoulder, right_hip, right_ankle)
+                    left_elbow_angle = right_elbow_angle
+                    left_knee_angle = right_knee_angle
+                else:
+                    raise ValueError("Object not in frame")
 
-            elbows_down = left_elbow_angle < 100 and right_elbow_angle < 100
-            elbows_up = left_elbow_angle > 150 and right_elbow_angle > 150
-            knees_straight = left_knee_angle > 160 and right_knee_angle > 160
-            body_straight = avg_spine_angle > 150
+                # Form checks
+                elbows_down = left_elbow_angle < 100 and right_elbow_angle < 100
+                elbows_up = left_elbow_angle > 150 and right_elbow_angle > 150
+                knees_straight = left_knee_angle > 160 and right_knee_angle > 160
+                body_straight = avg_spine_angle > 150
 
-            form_feedback = "Good posture" if body_straight else "Keep your body straight"
-            knee_feedback = "Knees straight" if knees_straight else "Straighten your knees"
-            elbow_feedback = "Lower down" if not elbows_down else "Good depth"
+                # Feedback
+                form_feedback = "Good posture" if body_straight else "Keep your body straight"
+                knee_feedback = "Knees straight" if knees_straight else "Straighten your knees"
+                elbow_feedback = "Lower down" if not elbows_down else "Good depth"
 
-            if elbows_down and body_straight and knees_straight and pushup_state == "up":
-                pushup_state = "down"
-            elif elbows_up and pushup_state == "down":
-                pushup_state = "up"
-                rep_count += 1
+                # State update
+                if elbows_down and body_straight and knees_straight and pushup_state == "up":
+                    pushup_state = "down"
+                elif elbows_up and pushup_state == "down":
+                    pushup_state = "up"
+                    rep_count += 1
 
-        except Exception as e:
-            form_feedback = str(e)
+            except ValueError as ve:
+                form_feedback = str(ve)
+                knee_feedback = ""
+                elbow_feedback = ""
+
+        else:
+            form_feedback = "Object not in frame"
+            knee_feedback = ""
+            elbow_feedback = ""
+
 
         # Draw landmarks
         if results.pose_landmarks:
