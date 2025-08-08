@@ -1,4 +1,3 @@
-
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -27,12 +26,14 @@ cap = cv2.VideoCapture(0)
 
 rep_count = 0
 lift_state = "up"
+VIS_THRESHOLD = 0.6  # Minimum visibility for considering a landmark valid
 
 with mp_pose.Pose(static_image_mode=False,
                   model_complexity=2,
                   enable_segmentation=False,
                   min_detection_confidence=0.7,
                   min_tracking_confidence=0.7) as pose:
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -47,45 +48,81 @@ with mp_pose.Pose(static_image_mode=False,
         try:
             landmarks = results.pose_landmarks.landmark
 
-            shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                        landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                   landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                    landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-            ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+            # Get landmark values and visibility
+            def get_landmark_coords(landmark):
+                return [landmarks[landmark].x, landmarks[landmark].y]
 
-            knee_angle = calculate_angle(hip, knee, ankle)
-            hip_angle = calculate_angle(shoulder, hip, knee)
-            spine_angle = vertical_angle(shoulder, hip)
+            def visible(landmark):
+                return landmarks[landmark].visibility > VIS_THRESHOLD
 
-            # Feedback logic
-            if knee_angle > 160 and hip_angle > 160:
-                lift_feedback = "Standing tall"
-            elif 90 < knee_angle < 140 and 40 < hip_angle < 80:
-                lift_feedback = "Proper deadlift position"
+            # Track both left and right side
+            sides = []
+            if all(visible(lm) for lm in [mp_pose.PoseLandmark.LEFT_SHOULDER.value,
+                                          mp_pose.PoseLandmark.LEFT_HIP.value,
+                                          mp_pose.PoseLandmark.LEFT_KNEE.value,
+                                          mp_pose.PoseLandmark.LEFT_ANKLE.value]):
+                shoulder = get_landmark_coords(mp_pose.PoseLandmark.LEFT_SHOULDER.value)
+                hip = get_landmark_coords(mp_pose.PoseLandmark.LEFT_HIP.value)
+                knee = get_landmark_coords(mp_pose.PoseLandmark.LEFT_KNEE.value)
+                ankle = get_landmark_coords(mp_pose.PoseLandmark.LEFT_ANKLE.value)
+                sides.append((shoulder, hip, knee, ankle))
+
+            if all(visible(lm) for lm in [mp_pose.PoseLandmark.RIGHT_SHOULDER.value,
+                                          mp_pose.PoseLandmark.RIGHT_HIP.value,
+                                          mp_pose.PoseLandmark.RIGHT_KNEE.value,
+                                          mp_pose.PoseLandmark.RIGHT_ANKLE.value]):
+                shoulder = get_landmark_coords(mp_pose.PoseLandmark.RIGHT_SHOULDER.value)
+                hip = get_landmark_coords(mp_pose.PoseLandmark.RIGHT_HIP.value)
+                knee = get_landmark_coords(mp_pose.PoseLandmark.RIGHT_KNEE.value)
+                ankle = get_landmark_coords(mp_pose.PoseLandmark.RIGHT_ANKLE.value)
+                sides.append((shoulder, hip, knee, ankle))
+
+            # Only proceed if at least one side is visible
+            if sides:
+                knee_angles = []
+                hip_angles = []
+                spine_angles = []
+
+                for (shoulder, hip, knee, ankle) in sides:
+                    knee_angles.append(calculate_angle(hip, knee, ankle))
+                    hip_angles.append(calculate_angle(shoulder, hip, knee))
+                    spine_angles.append(vertical_angle(shoulder, hip))
+
+                knee_angle = sum(knee_angles) / len(knee_angles)
+                hip_angle = sum(hip_angles) / len(hip_angles)
+                spine_angle = sum(spine_angles) / len(spine_angles)
+
+                # Feedback logic
+                if knee_angle > 160 and hip_angle > 160:
+                    lift_feedback = "Standing tall"
+                elif 90 < knee_angle < 140 and 40 < hip_angle < 80:
+                    lift_feedback = "Proper deadlift position"
+                else:
+                    lift_feedback = "Fix your form"
+
+                # Rep logic
+                if lift_feedback == "Proper deadlift position" and lift_state == "up":
+                    lift_state = "down"
+
+                if lift_feedback == "Standing tall" and lift_state == "down":
+                    rep_count += 1
+                    lift_state = "up"
+
+                # Display info
+                cv2.putText(image, f'Reps: {rep_count}', (30, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+                cv2.putText(image, f'Knee Angle: {int(knee_angle)}', (30, 80),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+                cv2.putText(image, f'Hip Hinge Angle: {int(hip_angle)}', (30, 120),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 180), 2)
+                cv2.putText(image, f'Spine Lean: {int(spine_angle)}', (30, 160),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
+                cv2.putText(image, lift_feedback, (30, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
             else:
-                lift_feedback = "Fix your form"
-
-            if lift_feedback == "Proper deadlift position" and lift_state == "up":
-                lift_state = "down"
-
-            if lift_feedback == "Standing tall" and lift_state == "down":
-                rep_count += 1
-                lift_state = "up"
-
-            # Display on screen
-            cv2.putText(image, f'Reps: {rep_count}', (30, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
-            cv2.putText(image, f'Knee Angle: {int(knee_angle)}', (30, 80),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-            cv2.putText(image, f'Hip Hinge Angle: {int(hip_angle)}', (30, 120),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 180), 2)
-            cv2.putText(image, f'Spine Lean: {int(spine_angle)}', (30, 160),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
-            cv2.putText(image, lift_feedback, (30, 200),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                cv2.putText(image, 'Unable to detect joints on either side', (30, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         except:
             pass

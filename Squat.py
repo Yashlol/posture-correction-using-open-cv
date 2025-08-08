@@ -1,9 +1,9 @@
+# Updated squat.py with dynamic side check
 import cv2
 import mediapipe as mp
 import numpy as np
 
 # --- ANGLE FUNCTIONS ---
-
 def calculate_angle(a, b, c):
     a, b, c = np.array(a), np.array(b), np.array(c)
     ba = a - b
@@ -47,35 +47,34 @@ with mp_pose.Pose(static_image_mode=False,
         try:
             landmarks = results.pose_landmarks.landmark
 
-            # LEFT SIDE
-            l_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                          landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-            l_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                     landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-            l_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                      landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-            l_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                       landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+            side_angles = []
+            side_spines = []
 
-            # RIGHT SIDE
-            r_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
-                          landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
-            r_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
-                     landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-            r_knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
-                      landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-            r_ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
-                       landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+            for side in ["LEFT", "RIGHT"]:
+                try:
+                    shoulder = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_SHOULDER").value].x,
+                                landmarks[getattr(mp_pose.PoseLandmark, f"{side}_SHOULDER").value].y]
+                    hip = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_HIP").value].x,
+                           landmarks[getattr(mp_pose.PoseLandmark, f"{side}_HIP").value].y]
+                    knee = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_KNEE").value].x,
+                            landmarks[getattr(mp_pose.PoseLandmark, f"{side}_KNEE").value].y]
+                    ankle = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_ANKLE").value].x,
+                             landmarks[getattr(mp_pose.PoseLandmark, f"{side}_ANKLE").value].y]
 
-            # ANGLES
-            l_knee_angle = calculate_angle(l_hip, l_knee, l_ankle)
-            r_knee_angle = calculate_angle(r_hip, r_knee, r_ankle)
-            l_spine_angle = vertical_angle(l_shoulder, l_hip)
-            r_spine_angle = vertical_angle(r_shoulder, r_hip)
+                    knee_angle = calculate_angle(hip, knee, ankle)
+                    spine_angle = vertical_angle(shoulder, hip)
 
-            # AVERAGE FOR CONSISTENT FEEDBACK
-            avg_knee_angle = (l_knee_angle + r_knee_angle) / 2
-            avg_spine_angle = (l_spine_angle + r_spine_angle) / 2
+                    side_angles.append(knee_angle)
+                    side_spines.append(spine_angle)
+
+                except:
+                    continue
+
+            if len(side_angles) == 0:
+                raise ValueError("No side fully visible")
+
+            avg_knee_angle = sum(side_angles) / len(side_angles)
+            avg_spine_angle = sum(side_spines) / len(side_spines)
 
             # FEEDBACK
             if avg_knee_angle > 140:
@@ -92,17 +91,17 @@ with mp_pose.Pose(static_image_mode=False,
             else:
                 spine_feedback = "Too much forward lean"
 
-            # --- REP LOGIC ---
+            # REP LOGIC
             if squat_feedback == "Good squat" and spine_feedback == "Correct posture":
                 if squat_state == "up":
-                    squat_state = "down"  # Going down with good form
+                    squat_state = "down"
 
             if squat_feedback == "Standing tall" and spine_feedback == "Upright posture":
                 if squat_state == "down":
                     rep_count += 1
-                    squat_state = "up"  # Completed one rep
+                    squat_state = "up"
 
-            # --- DISPLAY ---
+            # DISPLAY
             cv2.putText(image, f'Reps: {rep_count}', (30, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
             cv2.putText(image, f'Knee Angle: {int(avg_knee_angle)}', (30, 80),
