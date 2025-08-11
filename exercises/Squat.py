@@ -1,10 +1,13 @@
 # squat.py - Cleaner version using helper modules
 
 import cv2
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from camera import start_camera
-from pose_estimator import get_landmarks
+from landmarks import outline
 from angle_utils import calculate_angle, calculate_vertical_angle
-from counter import update_counter
+from counter import Counter
 import mediapipe as mp
 
 mp_drawing = mp.solutions.drawing_utils
@@ -12,7 +15,7 @@ mp_pose = mp.solutions.pose
 
 # Initialize camera and rep counter
 cap = start_camera()
-rep_counter = update_counter()
+rep_counter = Counter()
 
 with mp_pose.Pose(static_image_mode=False,
                   model_complexity=1,  # Reduced for less lag
@@ -27,7 +30,7 @@ with mp_pose.Pose(static_image_mode=False,
         if not ret:
             break
 
-        landmarks = get_landmarks(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        landmarks = outline(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
         if landmarks:
             side_angles = []
