@@ -1,111 +1,106 @@
-# squat.py - Cleaner version using helper modules
-
 import cv2
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from camera import start_camera
-from landmarks import outline
-from angle_utils import calculate_angle, calculate_vertical_angle
-from counter import Counter
 import mediapipe as mp
+import numpy as np
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from angle_utils import calculate_angle, vertical_angle
 
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
+cap = cv2.VideoCapture(0)
 
-# Initialize camera and rep counter
-cap = start_camera()
-rep_counter = Counter()
+rep_count = 0
+squat_state = "up"
 
-with mp_pose.Pose(static_image_mode=False,
-                  model_complexity=1,  # Reduced for less lag
-                  enable_segmentation=False,
-                  min_detection_confidence=0.7,
-                  min_tracking_confidence=0.7) as pose:
-
-    squat_state = "up"
-
+with mp_pose.Pose(min_detection_confidence=0.5,
+                  min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
 
-        landmarks = outline(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image.flags.writeable = False
+        results = pose.process(image)
+        image.flags.writeable = True
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-        if landmarks:
-            side_angles = []
-            side_spines = []
+        try:
+            landmarks = results.pose_landmarks.landmark
 
-            for side in ["LEFT", "RIGHT"]:
-                try:
-                    shoulder = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_SHOULDER").value].x,
-                                landmarks[getattr(mp_pose.PoseLandmark, f"{side}_SHOULDER").value].y]
-                    hip = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_HIP").value].x,
-                           landmarks[getattr(mp_pose.PoseLandmark, f"{side}_HIP").value].y]
-                    knee = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_KNEE").value].x,
-                            landmarks[getattr(mp_pose.PoseLandmark, f"{side}_KNEE").value].y]
-                    ankle = [landmarks[getattr(mp_pose.PoseLandmark, f"{side}_ANKLE").value].x,
-                             landmarks[getattr(mp_pose.PoseLandmark, f"{side}_ANKLE").value].y]
+            # LEFT SIDE
+            l_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+            l_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
+                     landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+            l_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
+                      landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
+            l_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
+                       landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
 
-                    knee_angle = calculate_angle(hip, knee, ankle)
-                    spine_angle = calculate_vertical_angle(shoulder, hip)
+            # RIGHT SIDE
+            r_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
+                          landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+            r_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
+                     landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+            r_knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
+                      landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
+            r_ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
+                       landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
 
-                    side_angles.append(knee_angle)
-                    side_spines.append(spine_angle)
-                except:
-                    continue
+            # ANGLES
+            l_knee_angle = calculate_angle(l_hip, l_knee, l_ankle)
+            r_knee_angle = calculate_angle(r_hip, r_knee, r_ankle)
+            l_spine_angle = vertical_angle(l_shoulder, l_hip)
+            r_spine_angle = vertical_angle(r_shoulder, r_hip)
 
-            if side_angles:
-                avg_knee_angle = sum(side_angles) / len(side_angles)
-                avg_spine_angle = sum(side_spines) / len(side_spines)
+            # AVERAGE FOR CONSISTENT FEEDBACK
+            avg_knee_angle = (l_knee_angle + r_knee_angle) / 2
+            avg_spine_angle = (l_spine_angle + r_spine_angle) / 2
 
-                # Feedback
-                if avg_knee_angle > 140:
-                    squat_feedback = "Standing tall"
-                elif avg_knee_angle < 60:
-                    squat_feedback = "Too low"
-                else:
-                    squat_feedback = "Good squat"
-
-                if avg_spine_angle < 10:
-                    spine_feedback = "Upright posture"
-                elif avg_spine_angle < 30:
-                    spine_feedback = "Correct posture"
-                else:
-                    spine_feedback = "Too much forward lean"
-
-                # Rep Logic
-                if squat_feedback == "Good squat" and spine_feedback == "Correct posture":
-                    if squat_state == "up":
-                        squat_state = "down"
-
-                if squat_feedback == "Standing tall" and spine_feedback == "Upright posture":
-                    if squat_state == "down":
-                        rep_counter.increment()
-                        squat_state = "up"
-
-                # Display info
-                cv2.putText(frame, f'Reps: {rep_counter.get_count()}', (30, 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
-                cv2.putText(frame, f'Knee Angle: {int(avg_knee_angle)}', (30, 80),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-                cv2.putText(frame, f'Spine Lean: {int(avg_spine_angle)}', (30, 120),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-                cv2.putText(frame, squat_feedback, (30, 160),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                cv2.putText(frame, spine_feedback, (30, 200),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 128, 255), 2)
-
+            # FEEDBACK
+            if avg_knee_angle > 140:
+                squat_feedback = "Standing tall"
+            elif avg_knee_angle < 60:
+                squat_feedback = "Too low"
             else:
-                cv2.putText(frame, "Body not fully visible", (30, 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+                squat_feedback = "Good squat"
 
-        else:
-            cv2.putText(frame, "No person in frame", (30, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+            if avg_spine_angle < 10:
+                spine_feedback = "Upright posture"
+            elif avg_spine_angle < 30:
+                spine_feedback = "Correct posture"
+            else:
+                spine_feedback = "Too much forward lean"
 
-        mp_drawing.draw_landmarks(frame, landmarks, mp_pose.POSE_CONNECTIONS)
-        cv2.imshow('Squat Form Correction + Rep Counter', frame)
+            # --- REP LOGIC ---
+            if squat_feedback == "Good squat" and spine_feedback == "Correct posture":
+                if squat_state == "up":
+                    squat_state = "down"  # Going down with good form
+
+            if squat_feedback == "Standing tall" and spine_feedback == "Upright posture":
+                if squat_state == "down":
+                    rep_count += 1
+                    squat_state = "up"  # Completed one rep
+
+            # --- DISPLAY ---
+            cv2.putText(image, f'Reps: {rep_count}', (30, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+            cv2.putText(image, f'Knee Angle: {int(avg_knee_angle)}', (30, 80),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+            cv2.putText(image, f'Spine Lean: {int(avg_spine_angle)}', (30, 120),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            cv2.putText(image, squat_feedback, (30, 160),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            cv2.putText(image, spine_feedback, (30, 200),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 128, 255), 2)
+
+        except:
+            pass
+
+        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        cv2.imshow('Squat Form Correction + Rep Counter', image)
 
         if cv2.waitKey(10) & 0xFF == ord('q'):
             break

@@ -10,19 +10,14 @@ def calculate_angle(a, b, c):
 
 import math
 
-def calculate_vertical_angle(a, b):
-    """
-    Calculates the vertical angle (in degrees) of a segment AB relative to the vertical axis.
-    a, b: tuples or lists of (x, y) coordinates.
-    """
-    ax, ay = a
-    bx, by = b
-    
-    # Difference in coordinates
-    dx = bx - ax
-    dy = by - ay
+def vertical_angle(a, b):
+    a, b = np.array(a), np.array(b)
+    vector = a - b
+    vertical = np.array([0, -1])
+    cosine = np.dot(vector, vertical) / (np.linalg.norm(vector) * np.linalg.norm(vertical))
+    angle = np.arccos(np.clip(cosine, -1.0, 1.0))
+    return np.degrees(angle)
 
-    # Angle from vertical: we compare with vertical axis, so atan2(dx, dy)
-    angle = math.degrees(math.atan2(dx, dy))
-
-    return abs(angle)  # always positive
+def horizontal_alignment(a, b):
+    a, b = np.array(a), np.array(b)
+    return abs(a[1] - b[1]) * 100  # vertical difference in %

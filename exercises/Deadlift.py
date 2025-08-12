@@ -1,24 +1,10 @@
 import cv2
 import mediapipe as mp
 import numpy as np
-
-# --- ANGLE FUNCTIONS ---
-def calculate_angle(a, b, c):
-    a, b, c = np.array(a), np.array(b), np.array(c)
-    ba = a - b
-    bc = c - b
-    cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-    angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
-    return np.degrees(angle)
-
-def vertical_angle(a, b):
-    a, b = np.array(a), np.array(b)
-    vector = a - b
-    vertical = np.array([0, -1])
-    cosine = np.dot(vector, vertical) / (np.linalg.norm(vector) * np.linalg.norm(vertical))
-    angle = np.arccos(np.clip(cosine, -1.0, 1.0))
-    return np.degrees(angle)
-
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from angle_utils import calculate_angle, vertical_angle
 # --- INIT ---
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
