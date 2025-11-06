@@ -3,6 +3,7 @@ import mediapipe as mp
 import numpy as np
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from angle_utils import calculate_angle, vertical_angle
 
@@ -12,6 +13,10 @@ cap = cv2.VideoCapture(0)
 
 rep_count = 0
 squat_state = "up"
+
+# --- Fullscreen window setup ---
+cv2.namedWindow('Squat Form Correction + Rep Counter', cv2.WND_PROP_FULLSCREEN)
+cv2.setWindowProperty('Squat Form Correction + Rep Counter', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
 with mp_pose.Pose(min_detection_confidence=0.5,
                   min_tracking_confidence=0.5) as pose:
@@ -62,10 +67,10 @@ with mp_pose.Pose(min_detection_confidence=0.5,
             # FEEDBACK
             if avg_knee_angle > 140:
                 squat_feedback = "Standing tall"
-            elif avg_knee_angle < 60:
-                squat_feedback = "Too low"
-            else:
+            elif avg_knee_angle > 80:
                 squat_feedback = "Good squat"
+            elif avg_knee_angle < 30:
+                squat_feedback = "Too low"
 
             if avg_spine_angle < 10:
                 spine_feedback = "Upright posture"

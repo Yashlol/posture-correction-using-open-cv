@@ -82,24 +82,25 @@ while cap.isOpened():
         posture_feedback = ""
 
         if avg_elbow_angle:
-            if avg_elbow_angle > 160 and (spine_angle is not None and spine_angle < 25):
+            if stage is None:  # initialize stage
+                if avg_elbow_angle > 150:
+                    stage = "up"
+                elif avg_elbow_angle < 90:
+                    stage = "down"
+
+            if avg_elbow_angle > 150:  # Arms extended
                 feedback = "Arms fully extended"
                 if stage == "down":
                     counter += 1
                     stage = "up"
-            elif avg_elbow_angle < 70:
+
+            elif avg_elbow_angle < 90:  # Bar lowered
                 feedback = "Bar at shoulder"
                 stage = "down"
+
             else:
                 feedback = "In motion"
 
-        if spine_angle is not None:
-            if 5 <= spine_angle <= 15:
-                posture_feedback = "Perfect posture"
-            elif 15 < spine_angle <= 25:
-                posture_feedback = "Slight lean, adjust"
-            else:
-                posture_feedback = "Excessive lean"
 
         # Display feedback
         mp_draw.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
