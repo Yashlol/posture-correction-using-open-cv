@@ -91,7 +91,7 @@ with mp_pose.Pose(static_image_mode=False,
 
                 # Form checks
                 elbows_down = left_elbow_angle < 100 and right_elbow_angle < 100
-                elbows_up = left_elbow_angle > 150 and right_elbow_angle > 150
+                elbows_up = left_elbow_angle > 170 and right_elbow_angle > 170
                 knees_straight = left_knee_angle > 160 and right_knee_angle > 160
                 body_straight = avg_spine_angle > 150
 
